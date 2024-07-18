@@ -12,7 +12,7 @@ sudo pg_upgradecluster 13 main13
 Проверил наличие базы db_otus2
 Внешнее подключение проверил dbeaver
 
-##allayarovag@PF4TFW5R:~$ sudo docker run --name pg-server --network pg-net -e POSTGRES_PASSWORD=postgresmaster -d -p 5432:5432 -v ##/var/lib/postgres:/var/lib/postgresql/data postgres:16
+##allayarovag@PF4TFW5R:$ sudo docker run --name pg-server --network pg-net -e POSTGRES_PASSWORD=postgresmaster -d -p 5432:5432 -v ##/var/lib/postgres:/var/lib/postgresql/data postgres:16
 	*Unable to find image 'postgres:16' locally
 	16: Pulling from library/postgres
 	Digest: sha256:0aafd2ae7e6c391f39fb6b7621632d79f54068faebc726caf469e87bd1d301c0
