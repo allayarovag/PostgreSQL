@@ -12,37 +12,37 @@ sudo pg_upgradecluster 13 main13
 Проверил наличие базы db_otus2
 Внешнее подключение проверил dbeaver
 
-##allayarovag@PF4TFW5R:~$ sudo docker run --name pg-server --network pg-net -e POSTGRES_PASSWORD=postgresmaster -d -p 5432:5432 -v ##/var/lib/postgres:/var/lib/postgresql/data postgres:16
-	**Unable to find image 'postgres:16' locally
+allayarovag@PF4TFW5R:~$ sudo docker run --name pg-server --network pg-net -e POSTGRES_PASSWORD=postgresmaster -d -p 5432:5432 -v/var/lib/postgres:/var/lib/postgresql/data postgres:16
+	Unable to find image 'postgres:16' locally
 	16: Pulling from library/postgres
 	Digest: sha256:0aafd2ae7e6c391f39fb6b7621632d79f54068faebc726caf469e87bd1d301c0
 	Status: Downloaded newer image for postgres:16
 	10c16bd02c805d603c0ee837fdcdda5e91c54daea90b8ca92af97e72bc174da1**
 allayarovag@PF4TFW5R:~$ sudo docker run -it --rm --network pg-net --name pg-client postgres:16 psql -h pg-server -U postgres
-	**Password for user postgres:**
+	Password for user postgres
 	
-##postgres=# create database db_otus2;
-	**CREATE DATABASE**
-##postgres=#
+postgres=# create database db_otus2;
+	CREATE DATABASE**
+postgres=#
 
-##allayarovag@PF4TFW5R:~$ sudo docker ps -a
+allayarovag@PF4TFW5R:~$ sudo docker ps -a
 	CONTAINER ID   IMAGE            COMMAND                  CREATED              STATUS                      PORTS                    NAMES
 	10c16bd02c80   postgres:16      "docker-entrypoint.s…"   About a minute ago   Up About a minute           0.0.0.0:5432->5432/tcp   pg-server
 	1b2634d7d6f1   dpage/pgadmin4   "/entrypoint.sh"         2 hours ago          Exited (0) 14 minutes ago                            pgadmin-dev
 	dd276adedcfa   postgres         "docker-entrypoint.s…"   2 hours ago          Exited (0) 14 minutes ago                            postgres-dev
-##allayarovag@PF4TFW5R:~$ sudo docker stop ^C
-##allayarovag@PF4TFW5R:~$ sudo docker stop 10c16bd02c80
+allayarovag@PF4TFW5R:~$ sudo docker stop ^C
+allayarovag@PF4TFW5R:~$ sudo docker stop 10c16bd02c80
 	10c16bd02c80
-##allayarovag@PF4TFW5R:~$ sudo docker rm 10c16bd02c80
+allayarovag@PF4TFW5R:~$ sudo docker rm 10c16bd02c80
 	10c16bd02c80
-##allayarovag@PF4TFW5R:~$ psql -h localhost -U postgres -d postgres
+allayarovag@PF4TFW5R:~$ psql -h localhost -U postgres -d postgres
 	psql: error: connection to server at "localhost" (127.0.0.1), port 5432 failed: Connection refused
         Is the server running on that host and accepting TCP/IP connections?
-##allayarovag@PF4TFW5R:~$ sudo docker ps -a
+allayarovag@PF4TFW5R:~$ sudo docker ps -a
 	CONTAINER ID   IMAGE            COMMAND                  CREATED       STATUS                      PORTS     NAMES
 	1b2634d7d6f1   dpage/pgadmin4   "/entrypoint.sh"         2 hours ago   Exited (0) 15 minutes ago             pgadmin-dev
 	dd276adedcfa   postgres         "docker-entrypoint.s…"   2 hours ago   Exited (0) 15 minutes ago             postgres-dev
-##allayarovag@PF4TFW5R:~$ sudo docker run --name pg-server --network pg-net -e POSTGRES_PASSWORD=postgresmaster -d -v /var/lib/postgres:/var/lib/postgresql/data postgres:16
+allayarovag@PF4TFW5R:~$ sudo docker run --name pg-server --network pg-net -e POSTGRES_PASSWORD=postgresmaster -d -v /var/lib/postgres:/var/lib/postgresql/data postgres:16
 	95133f0b71ae907d1d3a8215587d270fedfe39b7aeb8e3b25fdbaa496a4e03e0
 ##allayarovag@PF4TFW5R:~$ sudo docker run -it --rm --network pg-net --name pg-client postgres:16 psql -h pg-server -U postgres
 	Password for user postgres:
