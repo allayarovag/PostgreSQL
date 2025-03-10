@@ -1,0 +1,235 @@
+## Создать индекс к какой-либо из таблиц вашей БД
+
+Заполняем таблицу:
+```
+INSERT INTO t1
+    (c1, c2, c3, c4)
+SELECT
+        random_data.num,
+        chr((32 + random_data.rand1 * 94)::integer),
+        random_data.rand3 < 0.01,
+        substr(md5(random()::text), 1, 25)
+FROM random_data
+ORDER BY random();
+INSERT 0 100000
+postgres=# select * from t1 where c1 < 100;
+```
+Получаем такую картину:
+```
+
+c1 | c2 | c3 |            c4
+----+----+----+---------------------------
+  3 | c  | f  | b46a8475f777c8f50482a22d8
+ 30 | L  | f  | 703f2841d83a7ccfa3cb9085d
+ 28 | *  | f  | ad28fa4206590e6f4d259444e
+ 74 | P  | f  | e24d240abac13f3b05eb2b12c
+ 85 | @  | f  | 4406767a6bd54aecd193f5511
+```
+
+
+
+Создаем индекс, обновляем
+```
+postgres=# CREATE INDEX
+    idx_t1_c1
+    ON t1(c1);
+CREATE INDEX
+postgres=# analyze t1;
+ANALYZE
+```
+## Прислать текстом результат команды explain, в которой используется данный индекс
+
+Проверяем:
+```
+postgres=# explain
+postgres-# select * from t1 where c1 < 100;
+                                QUERY PLAN
+--------------------------------------------------------------------------
+ Bitmap Heap Scan on t1  (cost=5.08..295.12 rows=102 width=33)
+   Recheck Cond: (c1 < 100)
+   ->  Bitmap Index Scan on idx_t1_c1  (cost=0.00..5.06 rows=102 width=0)
+         Index Cond: (c1 < 100)
+(4 rows)
+
+Сканирует индекс idx_t1_c1, чтобы найти все строки в таблице t1, которые удовлетворяют условию c1 < 100
+Ориентировочная стоимость 0,00..5,06
+По оценкам оптимизатора, 102 строки будут соответствовать условию c1 < 100.
+```
+postgres=# explain
+select * from t1 where c1 < 100000;
+                        QUERY PLAN
+----------------------------------------------------------
+ Seq Scan on t1  (cost=0.00..2084.00 rows=99999 width=33)
+   Filter: (c1 < 100000)
+(2 rows)
+```
+Данный запрос получается низкоселективный, поэтому оптимизатор предпочитает полное сканирование.
+
+## 3.полнотекстовый поиск
+Пример берем из шапаргалки
+```
+postgres=# explain SELECT * FROM documents
+    WHERE metadata @> '{"author": "John"}';
+                         QUERY PLAN
+------------------------------------------------------------
+ Seq Scan on documents  (cost=0.00..14.25 rows=3 width=210)
+   Filter: (metadata @> '{"author": "John"}'::jsonb)
+(2 rows)
+```
+Отсутствие индексов - полный перебор строк seq scan...
+Создаём GIN-индекс на JSON-объекты:
+```
+postgres=# CREATE INDEX
+    idx_documents_metadata
+    ON documents
+    USING GIN (metadata);
+CREATE INDEX
+postgres=# analyze documents;
+ANALYZE
+```
+Проверяем результат:
+```
+postgres=# EXPLAIN
+SELECT * FROM documents
+    WHERE metadata @> '{"author": "John"}';
+                                      QUERY PLAN
+--------------------------------------------------------------------------------------
+ Bitmap Heap Scan on documents  (cost=12.96..17.04 rows=6 width=116)
+   Recheck Cond: (metadata @> '{"author": "John"}'::jsonb)
+   ->  Bitmap Index Scan on idx_documents_metadata  (cost=0.00..12.96 rows=6 width=0)
+         Index Cond: (metadata @> '{"author": "John"}'::jsonb)
+(4 rows)
+```
+Признаться что данных мало, стоимость увеличилась.
+Оказалось дешевле использовать полный перебор.
+На больших данных результат будет лучше.
+```
+postgres=# explain SELECT * FROM documents
+    WHERE metadata->'tags' ? 'legal';
+                                  QUERY PLAN
+-------------------------------------------------------------------------------
+ Seq Scan on documents  (cost=10000000000.00..10000000001.32 rows=1 width=116)
+   Filter: ((metadata -> 'tags'::text) ? 'legal'::text)
+ JIT:
+   Functions: 2
+   Options: Inlining true, Optimization true, Expressions true, Deforming true
+(5 rows)
+```
+Страшные цифры оптимизатора cost=10000000000.00..10000000001.32 rows=1 width=116
+Добавляем индекс на теги:
+```
+postgres=# CREATE INDEX
+    idx_documents_metadata_tags
+    ON documents
+    USING gin((metadata->'tags'));
+CREATE INDEX
+postgres=# EXPLAIN
+SELECT * FROM documents
+    WHERE metadata->'tags' ? 'legal';
+```
+Проверяем:
+```
+postgres=# EXPLAIN
+SELECT * FROM documents
+    WHERE metadata->'tags' ? 'legal';
+                                        QUERY PLAN
+------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on documents  (cost=8.52..12.54 rows=1 width=116)
+   Recheck Cond: ((metadata -> 'tags'::text) ? 'legal'::text)
+   ->  Bitmap Index Scan on idx_documents_metadata_tags  (cost=0.00..8.52 rows=1 width=0)
+         Index Cond: ((metadata -> 'tags'::text) ? 'legal'::text)
+(4 rows)
+```
+Индекс GIN idx_documents_metadata_tags эффективно используется для фильтрации строк на основе условия JSON
+Получаем значительно лучше общую стоимость, запрос оптимизирован...
+
+Проверяем поиск с помощью like '%document%'
+```
+postgres=# EXPLAIN
+SELECT * FROM documents
+    WHERE contents like '%document%';
+                        QUERY PLAN
+-----------------------------------------------------------
+ Seq Scan on documents  (cost=0.00..1.26 rows=6 width=116)
+   Filter: (contents ~~ '%document%'::text)
+(2 rows)
+```
+```
+postgres=# CREATE INDEX
+    idx_documents_contents
+    ON documents
+    USING GIN(to_tsvector('english', contents));
+CREATE INDEX
+```
+Сравниваем:
+```
+postgres=# SET enable_seqscan = OFF;
+SET
+postgres=# EXPLAIN
+SELECT * FROM documents
+    WHERE to_tsvector('english', contents) @@ 'document';
+                                          QUERY PLAN
+----------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on documents  (cost=8.53..12.79 rows=1 width=116)
+   Recheck Cond: (to_tsvector('english'::regconfig, contents) @@ '''document'''::tsquery)
+   ->  Bitmap Index Scan on idx_documents_contents  (cost=0.00..8.53 rows=1 width=0)
+         Index Cond: (to_tsvector('english'::regconfig, contents) @@ '''document'''::tsquery)
+(4 rows)
+```
+Опять же карта строится, данных мало, появились накладные расходы. Т.к. данных мало, выходит что выгодней использовать "вложенные циклы". 
+На больших данных результат будет хороший.
+
+## 4.Функциональный индекс
+
+Добавляем поле общей суммы(c5summ), поле количества(c6Quantity) для вычисления стоитмости одной штуки(c5summ/c6Quantity). 
+```
+postgres=# alter table t1 add c5summ int;
+ALTER TABLE
+postgres=# alter table t1 add c6Quantity int;
+ALTER TABLE
+postgres=# update t1 set c5summ = floor(random() * (1000 - 1 + 1)) + 1;
+UPDATE 100000
+postgres=# update t1 set c6quantity = floor(random() * (100 - 1 + 1)) + 1;
+UPDATE 100000
+```
+postgres=# explain(ANALYZE, timing) select c5summ::numeric / 10 as price,* from t1 where (c5summ::numeric / 10) < 1;
+                                              QUERY PLAN
+-------------------------------------------------------------------------------------------------------
+ Seq Scan on t1  (cost=0.00..4517.66 rows=33333 width=73) (actual time=0.829..21.660 rows=867 loops=1)
+   Filter: (((c5summ)::numeric / '10'::numeric) < '1'::numeric)
+   Rows Removed by Filter: 99133
+ Planning Time: 0.120 ms
+ Execution Time: 22.490 ms
+(5 rows)
+```
+Получаем полное сканирование Seq Scan. Создаем индекс.
+стоимость=0.00..4517.66
+```
+postgres=# CREATE INDEX
+    func_idx_t1_OnePiecePrice
+    ON t1 ((c5summ::numeric / 10));
+CREATE INDEX
+
+postgres=# analyze t1;
+ANALYZE
+postgres=# explain select c5summ::numeric / 10 as price,* from t1 where (c5summ::numeric / 10) < 1;
+                                        QUERY PLAN
+-------------------------------------------------------------------------------------------
+ Bitmap Heap Scan on t1  (cost=19.01..1801.18 rows=851 width=73)
+   Recheck Cond: (((c5summ)::numeric / '10'::numeric) < '1'::numeric)
+   ->  Bitmap Index Scan on func_idx_t1_onepieceprice  (cost=0.00..18.80 rows=851 width=0)
+         Index Cond: (((c5summ)::numeric / '10'::numeric) < '1'::numeric)
+(4 rows)
+```
+Функциональный индекс func_idx_t1_onepieceprice используется для фильтрации строк на основе условия (c5summ::numeric / 10) < 1.
+Ориентировочная стоимость 
+	0,00..18,80. 
+по оценкам оптимизатора, 851 строка будет соответствовать условию.
+Получаем хороший прирост оценки плана запроса
+Bitmap Index Scan составляет карту страниц с данными, которые необходимо вернуть.
+Bitmap Heap в свое время читает данные страницы уже упорядоченно 4.374 ms против 22.490 ms без индекса..Прирост почти в 6 раз!
+
+
+
+
+
